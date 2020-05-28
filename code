@@ -1,0 +1,175 @@
+from flask import Flask, render_template, redirect
+from flask_sqlalchemy import SQLAlchemy, request
+from datetime import datetime
+from argon2 import PasswordHasher
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, BooleanField
+from wtforms.validators import InputRequired, Email, Length
+from flask_bootstrap import Bootstrap
+
+
+app = Flask(__name__)
+Bootstrap(app)
+
+
+app.config['SECRET_KEY'] = 'kfsiojofonsndfosdfohijkoefjkoijdofoijhsaoih'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posts.db'
+app.config['SQLALCHEMY_BINDS'] = {
+    'Users': 'sqlite:///Users.db',
+    'Com': 'sqlite:///com.db'}
+
+db = SQLAlchemy(app)
+
+
+class BlogPost(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(72), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    author = db.Column(db.String(20), nullable=False, default='N/A')
+    date_posted = db.Column(
+        db.DateTime, nullable=False, default=datetime.utcnow)
+    pinn = db.Column(db.Boolean, default=False)
+
+    def __repr__(self):
+        return 'Blog post' + str(self.id)
+
+
+class Users(db.Model):
+    __bind_key__ = 'Users'
+    uid = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(30), nullable=False)
+    mail = db.Column(db.String(90), nullable=False)
+    pw = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(30), nullable=False, default='User')
+
+
+class Com(db.Model):
+    __bind_key__ = 'Com'
+    cid = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+
+
+@app.route('/home/<string:name>')
+def hello_world(name):
+    return 'Hello ' + name
+
+
+@app.route('/')
+def pozz():
+    return render_template("index.html")
+
+
+@app.route('/posts', methods=["GET", "POST"])
+def posts():
+    if request.method == 'POST':
+        post_title = request.form['title']
+        post_content = request.form['content']
+        post_author = request.form['author']
+        new_post = BlogPost(
+            title=post_title,
+            content=post_content,
+            author=post_author)
+        db.session.add(new_post)
+        db.session.commit()
+        return 'Uspesno napravljen post'
+        return redirect('/posts')
+    else:
+        all_posts = BlogPost.query.all()
+        return render_template('posts.html', posts=all_posts)
+
+
+@app.route('/posts/delete/<int:id>')
+def delete(id):
+    post = BlogPost.query.get_or_404(id)
+    db.session.delete(post)
+    db.session.commit()
+    return redirect('/posts')
+
+
+@app.route("/posts/edit/<int:id>", methods=["GET", "POST"])
+def edit(id):
+    post = BlogPost.query.get_or_404(id)
+
+    if request.method == "POST":
+        post.title = request.form['title']
+        post.content = request.form['content']
+        post.author = request.form['author']
+        db.session.commit()
+        return redirect('/posts')
+    else:
+        return render_template('edit.html', post=post)
+
+
+@app.route("/registrate", methods=['GET', 'POST'])
+def registrate():
+    render_template('register.html')
+    if request.method == 'POST':
+        name = request.form['nm']
+        email = request.form['mail']
+        passwords = request.form['pw']
+        submitpw = request.form['rpw']
+        ph = PasswordHasher()
+        hash = ph.hash(passwords)
+        if (
+            passwords == submitpw and
+                Users.query.filter_by(mail=email).first() is None):
+            new_user = Users(
+                            name=name,
+                            mail=email,
+                            pw=hash)
+            db.session.add(new_user)
+            db.session.commit()
+            return "registrovani"
+        else:
+            return 'Site crashed, reload it and try again'
+    else:
+        return render_template('register.html')
+
+
+@app.route('/post/<int:id>', methods=['GET', 'POST'])
+def post_open(id):
+
+    post = BlogPost.query.get_or_404(id)
+
+    if request.method == 'POST':
+        post.title = request.form['title']
+        post.content = request.form['content']
+        post.author = request.form['author']
+        return render_template(
+                                'post.html',
+                                post=post)
+    else:
+        return render_template('post.html', post=post)
+
+
+@app.route('/posts/pinn/<int:id>', methods=['GET', 'POST'])
+def pinn(id):
+    post = BlogPost.query.get_or_404(id)
+
+    if request.method == 'POST':
+        post.pinn = request.form['options']
+        if post.pinn == "unsticked":
+            post.pinn = False
+            db.session.commit()
+            return 'gotovo'
+        else:
+            post.pinn = True
+            db.session.commit()
+            return 'gotovo'
+    else:
+        return render_template('posts.html', post=post)
+
+
+class LoginForm(FlaskForm):
+    username = StringField('username')
+    password = PasswordField('password')
+
+
+@app.route('/form', methods=['GET', 'POST'])
+def form():
+    form = LoginForm()
+    return render_template('login.html', form=form)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
